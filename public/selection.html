@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مكتبة الكوثر - اختر المدخل</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            transition: all 0.3s ease;
+        }
+        
+        body {
+            font-family: 'Tajawal', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        body::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: url('https://lh3.googleusercontent.com/d/1lEzbtk0WgnGed5Umy3R3O_facwD2Y99H');
+            background-size: cover;
+            background-position: center;
+            opacity: 0.1;
+            z-index: 0;
+        }
+        
+        .language-selector {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 10;
+            display: flex;
+            gap: 10px;
+            background: rgba(255,255,255,0.2);
+            padding: 10px;
+            border-radius: 25px;
+            backdrop-filter: blur(10px);
+        }
+        
+        [dir="rtl"] .language-selector {
+            left: 20px;
+            right: auto;
+        }
+        
+        .lang-btn {
+            background: rgba(255,255,255,0.3);
+            border: 2px solid white;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: 700;
+            opacity: 0.7;
+        }
+        
+        .lang-btn.active,
+        .lang-btn:hover {
+            opacity: 1;
+            background: white;
+            color: #667eea;
+        }
+        
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 1200px;
+            width: 100%;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 60px;
+            animation: fadeInDown 1s ease-out;
+        }
+        
+        .logo {
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            margin: 0 auto 20px;
+            border: 6px solid white;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            animation: pulse 2s infinite;
+        }
+        
+        .header h1 {
+            color: white;
+            font-size: 3rem;
+            margin-bottom: 15px;
+            text-shadow: 2px 2px 10px rgba(0,0,0,0.3);
+            font-weight: 800;
+        }
+        
+        .header p {
+            color: rgba(255,255,255,0.9);
+            font-size: 1.3rem;
+            text-shadow: 1px 1px 5px rgba(0,0,0,0.2);
+        }
+        
+        .selection-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 40px;
+            margin-top: 40px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 25px;
+            padding: 50px 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.4s ease;
+            box-shadow: 0 15px 50px rgba(0,0,0,0.2);
+            position: relative;
+            overflow: hidden;
+            animation: fadeInUp 1s ease-out;
+        }
+        
+        .card:hover {
+            transform: translateY(-15px);
+            box-shadow: 0 25px 70px rgba(0,0,0,0.3);
+        }
+        
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 8px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+        }
+        
+        .card.librarian::before {
+            background: linear-gradient(90deg, #f093fb, #f5576c);
+        }
+        
+        .card-icon {
+            font-size: 5rem;
+            margin-bottom: 25px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: float 3s ease-in-out infinite;
+        }
+        
+        .card.librarian .card-icon {
+            background: linear-gradient(135deg, #f093fb, #f5576c);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .card h2 {
+            font-size: 2rem;
+            color: #333;
+            margin-bottom: 15px;
+            font-weight: 800;
+        }
+        
+        .card p {
+            color: #666;
+            font-size: 1.1rem;
+            line-height: 1.8;
+            margin-bottom: 30px;
+        }
+        
+        .card-button {
+            display: inline-block;
+            padding: 15px 40px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .card.librarian .card-button {
+            background: linear-gradient(135deg, #f093fb, #f5576c);
+            box-shadow: 0 5px 20px rgba(240, 147, 251, 0.4);
+        }
+        
+        .card-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 8px 30px rgba(102, 126, 234, 0.6);
+        }
+        
+        .card.librarian .card-button:hover {
+            box-shadow: 0 8px 30px rgba(240, 147, 251, 0.6);
+        }
+        
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.05);
+            }
+        }
+        
+        @keyframes float {
+            0%, 100% {
+                transform: translateY(0);
+            }
+            50% {
+                transform: translateY(-10px);
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .header p {
+                font-size: 1rem;
+            }
+            
+            .selection-cards {
+                grid-template-columns: 1fr;
+                gap: 30px;
+            }
+            
+            .card {
+                padding: 40px 30px;
+            }
+            
+            .card-icon {
+                font-size: 4rem;
+            }
+            
+            .card h2 {
+                font-size: 1.5rem;
+            }
+            
+            .language-selector {
+                top: 10px;
+                right: 10px;
+            }
+            
+            [dir="rtl"] .language-selector {
+                left: 10px;
+                right: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="language-selector">
+        <button class="lang-btn active" data-lang="ar"><i class="fas fa-globe"></i> عربي</button>
+        <button class="lang-btn" data-lang="fr"><i class="fas fa-globe"></i> FR</button>
+        <button class="lang-btn" data-lang="en"><i class="fas fa-globe"></i> EN</button>
+    </div>
+
+    <div class="container">
+        <div class="header">
+            <img src="https://lh3.googleusercontent.com/d/1lQ3Babrs3Wgv4rakVmkK0oCWcM0cTKPK" alt="Logo Alkawthar" class="logo">
+            <h1 data-key="title">مكتبة مدارس الكوثر العالمية</h1>
+            <p data-key="subtitle">اختر المدخل المناسب لك</p>
+        </div>
+        
+        <div class="selection-cards">
+            <div class="card librarian" onclick="window.location.href='index.html'">
+                <div class="card-icon">
+                    <i class="fas fa-user-shield"></i>
+                </div>
+                <h2 data-key="librarian_title">فضاء أمين المكتبة</h2>
+                <p data-key="librarian_desc">إدارة الكتب، الإعارة، والإحصائيات</p>
+                <a href="index.html" class="card-button">
+                    <i class="fas fa-door-open"></i> <span data-key="librarian_btn">الدخول إلى لوحة التحكم</span>
+                </a>
+            </div>
+            
+            <div class="card" onclick="window.location.href='student-teacher.html'">
+                <div class="card-icon">
+                    <i class="fas fa-users"></i>
+                </div>
+                <h2 data-key="student_title">فضاء المدرسين والطلاب</h2>
+                <p data-key="student_desc">الموارد الرقمية والمصادر التعليمية</p>
+                <a href="student-teacher.html" class="card-button">
+                    <i class="fas fa-book-reader"></i> <span data-key="student_btn">الدخول إلى الموارد</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const translations = {
+            ar: {
+                title: 'مكتبة مدارس الكوثر العالمية',
+                subtitle: 'اختر المدخل المناسب لك',
+                librarian_title: 'فضاء أمين المكتبة',
+                librarian_desc: 'إدارة الكتب، الإعارة، والإحصائيات',
+                librarian_btn: 'الدخول إلى لوحة التحكم',
+                student_title: 'فضاء المدرسين والطلاب',
+                student_desc: 'الموارد الرقمية والمصادر التعليمية',
+                student_btn: 'الدخول إلى الموارد'
+            },
+            fr: {
+                title: 'Bibliothèque des Écoles Internationales Al-Kawthar',
+                subtitle: 'Choisissez votre espace',
+                librarian_title: 'Espace Bibliothécaire',
+                librarian_desc: 'Gestion des livres, prêts et statistiques',
+                librarian_btn: 'Accéder au tableau de bord',
+                student_title: 'Espace Enseignants et Élèves',
+                student_desc: 'Ressources numériques et sources éducatives',
+                student_btn: 'Accéder aux ressources'
+            },
+            en: {
+                title: 'Al-Kawthar International Schools Library',
+                subtitle: 'Choose your space',
+                librarian_title: 'Librarian Space',
+                librarian_desc: 'Book management, loans and statistics',
+                librarian_btn: 'Access Dashboard',
+                student_title: 'Teachers and Students Space',
+                student_desc: 'Digital resources and educational materials',
+                student_btn: 'Access Resources'
+            }
+        };
+
+        let currentLanguage = localStorage.getItem('preferred_language') || 'ar';
+
+        function changeLanguage(lang) {
+            currentLanguage = lang;
+            localStorage.setItem('preferred_language', lang);
+            document.documentElement.lang = lang;
+            document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+            
+            document.querySelectorAll('.lang-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.lang === lang);
+            });
+
+            document.querySelectorAll('[data-key]').forEach(el => {
+                const key = el.dataset.key;
+                if (translations[lang] && translations[lang][key]) {
+                    el.textContent = translations[lang][key];
+                }
+            });
+        }
+
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            btn.addEventListener('click', () => changeLanguage(btn.dataset.lang));
+        });
+
+        // Appliquer la langue sauvegardée au chargement
+        changeLanguage(currentLanguage);
+    </script>
+</body>
+</html>

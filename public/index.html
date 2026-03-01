@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مكتبة الكوثر</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+</head>
+<body>
+    <!-- Page de connexion -->
+    <div id="login-page" style="display: flex;">
+        <div class="login-container">
+            <img src="https://lh3.googleusercontent.com/d/1lQ3Babrs3Wgv4rakVmkK0oCWcM0cTKPK" alt="Logo Alkawthar" class="logo">
+            <h1 data-key="welcome_title">مرحباً بكم في مكتبة مدارس الكوثر العالمية</h1>
+            <p class="welcome-subtitle" data-key="welcome_subtitle">الرجاء إدخال بيانات الاعتماد الخاصة بك للوصول إلى لوحة التحكم.</p>
+            <form id="login-form">
+                <div class="input-group">
+                    <i class="fas fa-user"></i>
+                    <input type="text" id="username" data-key-placeholder="username_placeholder" placeholder="اسم المستخدم" required>
+                </div>
+                <div class="input-group">
+                    <i class="fas fa-lock"></i>
+                    <input type="password" id="password" data-key-placeholder="password_placeholder" placeholder="كلمة المرور" required>
+                </div>
+                <button type="submit" class="btn" data-key="login_button">تسجيل الدخول</button>
+                <p id="login-error" class="error-message"></p>
+            </form>
+        </div>
+    </div>
+
+    <!-- Tableau de bord -->
+    <div id="dashboard-page" style="display:none;">
+        <header>
+            <div class="logo-header">
+                <i class="fas fa-book-open"></i>
+                <h1 data-key="dashboard_title">لوحة تحكم مكتبة الكوثر</h1>
+            </div>
+            <div class="header-controls">
+                <div class="language-selector">
+                    <button class="lang-btn active" data-lang="ar" title="العربية"><i class="fas fa-globe"></i> عربي</button>
+                    <button class="lang-btn" data-lang="fr" title="Français"><i class="fas fa-globe"></i> FR</button>
+                    <button class="lang-btn" data-lang="en" title="English"><i class="fas fa-globe"></i> EN</button>
+                </div>
+                <div class="header-user">
+                    <span data-key="school_name">مدارس الكوثر العالمية</span>
+                    <i class="fas fa-school"></i>
+                </div>
+                <button id="logout-btn" class="btn-logout">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span data-key="logout">تسجيل الخروج</span>
+                </button>
+            </div>
+        </header>
+
+        <div id="loading-bar" class="loading-bar" style="display: none;">
+            <div class="loading-progress">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+                </div>
+                <div class="loading-text">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <span id="loading-text-span" data-key="loading_data">تحميل البيانات من MongoDB...</span>
+                    <span id="loading-percentage">0%</span>
+                </div>
+                <div class="loading-details" id="loading-details">
+                    <small>جاري الاتصال بقاعدة البيانات...</small>
+                </div>
+            </div>
+        </div>
+
+        <div id="overdue-notifications" class="overdue-notifications" style="display: none;">
+            <div class="alert-container">
+                <div class="alert-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                <div class="alert-content">
+                    <h3 data-key="overdue_books_title">كتب متأخرة في الإرجاع</h3>
+                    <div id="overdue-list"></div>
+                    <button id="dismiss-alert" class="btn-dismiss">
+                        <i class="fas fa-times"></i>
+                        <span data-key="dismiss">إخفاء التنبيه</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <main class="container">
+            <section class="card stats-card animated">
+                <h2><i class="fas fa-chart-pie"></i> <span data-key="library_stats">إحصائيات المكتبة</span></h2>
+                <div class="stats-container">
+                    <div class="stat-item">
+                        <i class="fas fa-book"></i>
+                        <div><span id="total-books-stat">0</span><p data-key="total_books">إجمالي الكتب</p></div>
+                    </div>
+                    <div class="stat-item">
+                        <i class="fas fa-hand-holding-heart"></i>
+                        <div><span id="loaned-books-stat">0</span><p data-key="loaned_books">الكتب المعارة</p></div>
+                    </div>
+                    <div class="stat-item">
+                        <i class="fas fa-check-circle"></i>
+                        <div><span id="available-books-stat">0</span><p data-key="available_books">الكتب المتاحة</p></div>
+                    </div>
+                    <div class="stat-item">
+                        <i class="fas fa-exchange-alt"></i>
+                        <div><span id="copies-loaned-stat">0</span><p data-key="copies_loaned">عدد النسخ المعارة</p></div>
+                    </div>
+                </div>
+                <div style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <button id="view-student-loans-btn" class="btn btn-secondary"><i class="fas fa-user-graduate"></i> <span data-key="view_student_borrowers">عرض الطلاب المستعيرين</span></button>
+                    <button id="view-teacher-loans-btn" class="btn btn-secondary"><i class="fas fa-user-tie"></i> <span data-key="view_teacher_borrowers">عرض المدرسين المستعيرين</span></button>
+                    <button id="export-excel-btn" class="btn btn-success"><i class="fas fa-file-excel"></i> <span data-key="export_excel_data">تحميل بيانات Excel</span></button>
+                </div>
+            </section>
+
+            <div class="columns">
+                <section class="card animated">
+                    <h2><i class="fas fa-plus-circle"></i> <span data-key="loan_management">إدارة الإعارة</span></h2>
+                    <form id="loan-form">
+                        <div class="form-group">
+                            <label for="loan-isbn" data-key="loan_isbn_label">ISBN الكتاب</label>
+                            <div class="isbn-input-container">
+                                <input type="text" id="loan-isbn" required>
+                                <button type="button" id="scan-barcode-btn" class="btn-scan" data-key-title="scan_barcode_title" title="مسح الباركود"><i class="fas fa-camera"></i></button>
+                            </div>
+                        </div>
+                        <div class="form-group auto-filled">
+                            <label data-key="book_title_label">عنوان الكتاب</label>
+                            <p id="loan-book-title">-</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="borrower-type" data-key="borrower_type_label">نوع المستعير</label>
+                            <select id="borrower-type" required>
+                                <option value="student" data-key="student_option">طالب</option>
+                                <option value="teacher" data-key="teacher_option">مدرس/ة</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="student-name" data-key="borrower_name_label">اسم المستعير</label>
+                            <input type="text" id="student-name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="student-class" data-key="class_subject_label">الفصل/المادة</label>
+                            <input type="text" id="student-class" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="loan-copies" data-key="loan_copies_label">عدد النسخ المستعارة</label>
+                            <input type="number" id="loan-copies" min="1" value="1" required>
+                            <small class="form-help-text"><span data-key="available_copies_info">عدد النسخ المتاحة:</span> <span id="available-copies-display">-</span></small>
+                        </div>
+                        <div class="form-group">
+                            <label for="loan-date" data-key="loan_date_label">تاريخ الإعارة</label>
+                            <input type="date" id="loan-date" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="return-date" data-key="return_date_label">تاريخ التسليم</label>
+                            <input type="date" id="return-date" required>
+                        </div>
+                        <button type="submit" class="btn" data-key="loan_book_button">إعارة الكتاب</button>
+                    </form>
+                </section>
+
+                <section class="card animated">
+                    <h2><i class="fas fa-book-medical"></i> <span data-key="add_book_manually">إضافة كتاب يدوياً</span></h2>
+                    <form id="manual-book-form">
+                        <div class="form-group"><label for="manual-isbn" data-key="manual_isbn_label">ISBN</label><input type="text" id="manual-isbn" required></div>
+                        <div class="form-group"><label for="manual-title" data-key="manual_title_label">عنوان الكتاب</label><input type="text" id="manual-title" required></div>
+                        <div class="form-group"><label for="manual-copies" data-key="manual_copies_label">عدد النسخ</label><input type="number" id="manual-copies" min="1" value="1" required></div>
+                        <div class="form-group"><label for="manual-subject" data-key="manual_subject_label">المادة</label><input type="text" id="manual-subject"></div>
+                        <div class="form-group"><label for="manual-level" data-key="manual_level_label">المستوى</label><input type="text" id="manual-level"></div>
+                        <div class="form-group"><label for="manual-language" data-key="manual_language_label">اللغة</label><input type="text" id="manual-language"></div>
+                        <div class="form-group"><label for="manual-corner-name" data-key="manual_corner_name_label">اسم الركن</label><input type="text" id="manual-corner-name"></div>
+                        <div class="form-group"><label for="manual-corner-number" data-key="manual_corner_number_label">رقم الركن</label><input type="text" id="manual-corner-number"></div>
+                        <button type="submit" class="btn btn-primary" data-key="add_book_button">إضافة الكتاب</button>
+                    </form>
+                </section>
+
+                <section class="card animated">
+                    <h2><i class="fas fa-file-upload"></i> <span data-key="upload_excel">رفع ملف Excel للكتب</span></h2>
+                    <div class="form-group">
+                        <label for="excel-file" data-key="choose_excel_file_label">اختر ملف Excel</label>
+                        <input type="file" id="excel-file" accept=".xlsx,.xls" required>
+                    </div>
+                    <button id="upload-excel-btn" class="btn btn-success" data-key="upload_file_button">رفع الملف</button>
+                    <div id="upload-status" style="margin-top: 10px;"></div>
+                </section>
+            </div>
+
+            <section class="card animated full-width-section">
+                <h2><i class="fas fa-search"></i> <span data-key="inventory_search">البحث في المخزون وإدارة الكتب</span></h2>
+                <div class="form-group">
+                    <div class="search-controls">
+                        <div class="search-input-container">
+                            <input type="text" id="search-input" data-key-placeholder="search_placeholder" placeholder="ابحث...">
+                            <button id="scan-search-barcode-btn" class="btn-scan" data-key-title="scan_barcode_title" title="مسح الباركود للبحث"><i class="fas fa-camera"></i></button>
+                        </div>
+                        <button id="refresh-books-btn" class="btn btn-secondary"><i class="fas fa-sync-alt"></i> <span data-key="refresh">تحديث</span></button>
+                        <button id="save-all-changes-btn" class="btn btn-success" style="display: none;"><i class="fas fa-save"></i> <span data-key="save_all_changes">حفظ جميع التغييرات</span></button>
+                    </div>
+                    <div class="pagination-controls" id="pagination-controls" style="display: none;">
+                        <button id="prev-page-btn" disabled><i class="fas fa-chevron-right"></i> <span data-key="previous_page">السابق</span></button>
+                        <span id="page-info"></span>
+                        <button id="next-page-btn" disabled><span data-key="next_page">التالي</span> <i class="fas fa-chevron-left"></i></button>
+                    </div>
+                </div>
+                <div class="table-wrapper">
+                    <table id="books-table">
+                        <thead>
+                            <tr>
+                                <!-- Les en-têtes seront générés par JavaScript pour le tri -->
+                            </tr>
+                        </thead>
+                        <tbody id="books-table-body"></tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p data-key="copyright">&copy; 2025 مدارس الكوثر العالمية - جميع الحقوق محفوظة.</p>
+        </footer>
+    </div>
+
+    <!-- Modale unifiée pour les listes (prêts, historique, etc.) -->
+    <div id="modal-overlay" class="modal-overlay" style="display:none;">
+        <div id="loans-modal" class="modal">
+            <button class="close-modal-btn">&times;</button>
+            <h2 id="loans-modal-title"></h2>
+            <div class="modal-content">
+                <div class="form-group">
+                    <input type="text" id="loan-search-input" data-key-placeholder="search_in_loans" placeholder="ابحث...">
+                </div>
+                <div id="loans-modal-content-wrapper" class="table-wrapper">
+                    <!-- Le contenu (tableau) sera injecté ici par JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modale pour étendre la date de retour -->
+    <div id="extend-date-modal-overlay" class="modal-overlay" style="display:none;">
+        <div id="extend-date-modal" class="modal">
+            <button class="close-modal-btn" id="close-extend-modal">&times;</button>
+            <h2 data-key="extend_return_date">تمديد فترة الارجاع</h2>
+            <div class="modal-content">
+                <form id="extend-date-form">
+                    <div class="form-group"><label data-key="borrower_name_label">اسم المستعير</label><p id="extend-borrower-name">-</p></div>
+                    <div class="form-group"><label data-key="book_title_label">عنوان الكتاب</label><p id="extend-book-title">-</p></div>
+                    <div class="form-group"><label data-key="current_return_date">تاريخ الإرجاع الحالي</label><p id="extend-current-date">-</p></div>
+                    <div class="form-group"><label for="extend-new-date" data-key="new_return_date">تاريخ الإرجاع الجديد</label><input type="date" id="extend-new-date" required></div>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-calendar-check"></i> <span data-key="extend_loan">تمديد الإعارة</span></button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modale pour scanner le code-barres -->
+    <div id="barcode-modal-overlay" class="modal-overlay" style="display:none;">
+        <div id="barcode-modal" class="modal barcode-modal">
+            <button class="close-modal-btn" id="close-barcode-modal">&times;</button>
+            <h2 data-key="scan_barcode_modal_title">مسح الباركود</h2>
+            <div class="modal-content">
+                <div class="barcode-scanner-container">
+                    <video id="barcode-video" autoplay playsinline style="width: 100%; max-width: 400px; border-radius: 8px;"></video>
+                    <div class="scanner-overlay"><div class="scanner-line"></div></div>
+                </div>
+                <div class="barcode-controls">
+                    <button id="start-camera-btn" class="btn btn-primary"><i class="fas fa-camera"></i> <span data-key="start_scan_button">بدء المسح</span></button>
+                    <button id="stop-camera-btn" class="btn btn-secondary" style="display: none;"><i class="fas fa-stop"></i> <span data-key="stop_scan_button">إيقاف المسح</span></button>
+                </div>
+                <div id="barcode-result" class="barcode-result" style="display: none;">
+                    <p><strong><span data-key="code_detected_text">تم اكتشاف الرمز:</span></strong> <span id="barcode-value"></span></p>
+                    <button id="use-barcode-btn" class="btn btn-success"><i class="fas fa-check"></i> <span data-key="use_this_code_button">استخدام هذا الرمز</span></button>
+                </div>
+                <div class="barcode-help">
+                    <p><i class="fas fa-info-circle"></i> <span data-key="camera_help_text">وجه الكاميرا نحو الباركود للمسح التلقائي</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="scripts.js"></script>
+</body>
+</html>
