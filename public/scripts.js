@@ -543,12 +543,30 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!fileInput.files[0]) return alert('يرجى اختيار ملف Excel أولاً');
             const formData = new FormData();
             formData.append('excelFile', fileInput.files[0]);
-            statusDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جاري رفع الملف...';
+            statusDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جاري معالجة الملف...';
             try {
                 const response = await fetch('/api/books/upload', { method: 'POST', body: formData });
                 const result = await response.json();
                 if (!response.ok) throw new Error(result.message);
-                statusDiv.innerHTML = `<i class="fas fa-check-circle" style="color: green;"></i> تم رفع الملف! تمت إضافة ${result.addedCount} كتاب`;
+                statusDiv.innerHTML = `
+                    <div style="background:#f0fff4;border:1px solid #68d391;border-radius:8px;padding:10px 14px;margin-top:6px;">
+                        <p style="margin:0 0 4px;font-weight:bold;color:#276749;">
+                            <i class="fas fa-check-circle" style="color:#38a169;"></i>
+                            ${getTranslatedText('import_success') || 'تم الاستيراد بنجاح!'}
+                        </p>
+                        <p style="margin:2px 0;font-size:0.88em;color:#2d3748;">
+                            📦 إجمالي الصفوف المعالجة: <strong>${result.totalRows}</strong>
+                        </p>
+                        <p style="margin:2px 0;font-size:0.88em;color:#276749;">
+                            ✅ كتب جديدة أضيفت: <strong>${result.addedCount}</strong>
+                        </p>
+                        <p style="margin:2px 0;font-size:0.88em;color:#2b6cb0;">
+                            🔄 كتب موجودة تم تحديثها: <strong>${result.updatedCount}</strong>
+                        </p>
+                        <p style="margin:2px 0;font-size:0.88em;color:#718096;">
+                            ⏭ كتب موجودة بدون تغيير: <strong>${result.skippedCount}</strong>
+                        </p>
+                    </div>`;
                 fileInput.value = '';
                 await loadDataForPage(1);
             } catch (error) {
