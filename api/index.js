@@ -273,111 +273,79 @@ app.post('/api/books/upload', upload.single('excelFile'), async (req, res) => {
 
         const workbook = xlsx.readFile(req.file.path);
         const sheetName = workbook.SheetNames[0];
-        // defval: '' évite les undefined pour les cellules vides
         const data = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
 
         if (!data || data.length === 0) {
             return res.status(400).json({ message: 'Le fichier Excel est vide ou illisible.' });
         }
 
-        // Normalisation des colonnes (gère les espaces, accents, variantes)
+        // ── Normalisation des lignes ────────────────────────────────────────────
+        const now = new Date();
         const parsedRows = data.map(row => {
-            // Nettoyage des clés (trim)
             const cleanRow = {};
             for (const key of Object.keys(row)) {
                 cleanRow[key.trim()] = typeof row[key] === 'string' ? row[key].trim() : row[key];
             }
 
-            const totalCopies = parseInt(
-                cleanRow['Total Copies'] || cleanRow['TotalCopies'] ||
-                cleanRow['Nombre de copies'] || cleanRow['total_copies'] || 1
-            );
-            const loanedCopies = parseInt(
-                cleanRow['Copies Prêtées'] || cleanRow['Copies Pretees'] ||
-                cleanRow['LoanedCopies'] || cleanRow['loaned_copies'] || 0
-            );
-
-            const safeTotal  = isNaN(totalCopies)  ? 1 : Math.max(0, totalCopies);
-            const safeLoaned = isNaN(loanedCopies)  ? 0 : Math.max(0, loanedCopies);
+            const totalCopies  = parseInt(cleanRow['Total Copies']    || cleanRow['TotalCopies']  || cleanRow['total_copies'] || 1);
+            const loanedCopies = parseInt(cleanRow['Copies Prêtées']  || cleanRow['Copies Pretees'] || cleanRow['LoanedCopies'] || cleanRow['loaned_copies'] || 0);
+            const safeTotal    = isNaN(totalCopies)  ? 1 : Math.max(0, totalCopies);
+            const safeLoaned   = isNaN(loanedCopies) ? 0 : Math.max(0, loanedCopies);
 
             return {
-                isbn:         String(cleanRow['ISBN']  || cleanRow['isbn']  || '').trim(),
-                title:        String(cleanRow['Titre'] || cleanRow['Title'] || cleanRow['title'] || '').trim(),
-                totalCopies:  safeTotal,
-                loanedCopies: safeLoaned,
+                isbn:           String(cleanRow['ISBN']  || cleanRow['isbn']  || '').trim(),
+                title:          String(cleanRow['Titre'] || cleanRow['Title'] || cleanRow['title'] || '').trim(),
+                totalCopies:    safeTotal,
+                loanedCopies:   safeLoaned,
                 availableCopies: Math.max(0, safeTotal - safeLoaned),
-                subject:      String(cleanRow['Matière'] || cleanRow['Matiere'] || cleanRow['Subject'] || cleanRow['subject'] || ''),
-                level:        String(cleanRow['Niveau'] || cleanRow['Level']   || cleanRow['level']   || ''),
-                language:     String(cleanRow['Langue'] || cleanRow['Language'] || cleanRow['language'] || ''),
-                cornerName:   String(cleanRow['Nom du Coin']    || cleanRow['Corner Name']   || cleanRow['CornerName']   || ''),
-                cornerNumber: String(cleanRow['Numéro du Coin'] || cleanRow['Corner Number'] || cleanRow['CornerNumber'] || '')
+                subject:        String(cleanRow['Matière']       || cleanRow['Matiere']       || cleanRow['Subject']       || cleanRow['subject']       || ''),
+                level:          String(cleanRow['Niveau']        || cleanRow['Level']         || cleanRow['level']         || ''),
+                language:       String(cleanRow['Langue']        || cleanRow['Language']      || cleanRow['language']      || ''),
+                cornerName:     String(cleanRow['Nom du Coin']   || cleanRow['Corner Name']   || cleanRow['CornerName']    || ''),
+                cornerNumber:   String(cleanRow['Numéro du Coin']|| cleanRow['Numero du Coin']|| cleanRow['Corner Number'] || cleanRow['CornerNumber']  || '')
             };
         }).filter(book => book.isbn && book.title);
 
         if (parsedRows.length === 0) {
-            return res.status(400).json({ message: 'Aucune ligne valide trouvée (ISBN et Titre requis).' });
+            return res.status(400).json({ message: 'Aucune ligne valide trouvée (colonnes ISBN et Titre requises).' });
         }
 
-        let addedCount   = 0;
-        let updatedCount = 0;
-        let skippedCount = 0;
-
-        for (const bookData of parsedRows) {
-            const existing = await Book.findOne({ isbn: bookData.isbn });
-
-            if (!existing) {
-                // ── Nouveau livre : insertion complète ──────────────────────────
-                await Book.create({
-                    ...bookData,
-                    createdAt: new Date(),
-                    updatedAt: new Date()
-                });
-                addedCount++;
-            } else {
-                // ── Livre existant : comparer et mettre à jour si nécessaire ────
-                const hasChanges =
-                    existing.title        !== bookData.title        ||
-                    existing.totalCopies  !== bookData.totalCopies  ||
-                    existing.loanedCopies !== bookData.loanedCopies ||
-                    existing.subject      !== bookData.subject      ||
-                    existing.level        !== bookData.level        ||
-                    existing.language     !== bookData.language     ||
-                    existing.cornerName   !== bookData.cornerName   ||
-                    existing.cornerNumber !== bookData.cornerNumber;
-
-                if (hasChanges) {
-                    // On ne touche pas aux copies prêtées gérées par le système
-                    // sauf si l'Excel fournit explicitement la valeur
-                    await Book.findOneAndUpdate(
-                        { isbn: bookData.isbn },
-                        {
-                            $set: {
-                                title:           bookData.title,
-                                totalCopies:     bookData.totalCopies,
-                                loanedCopies:    bookData.loanedCopies,
-                                availableCopies: Math.max(0, bookData.totalCopies - bookData.loanedCopies),
-                                subject:         bookData.subject,
-                                level:           bookData.level,
-                                language:        bookData.language,
-                                cornerName:      bookData.cornerName,
-                                cornerNumber:    bookData.cornerNumber,
-                                updatedAt:       new Date()
-                            }
-                        }
-                    );
-                    updatedCount++;
-                } else {
-                    skippedCount++;
-                }
+        // ── Une seule opération bulkWrite = ultra-rapide même pour des milliers de lignes ──
+        // updateOne + upsert:true  →  crée le document s'il n'existe pas, le met à jour sinon
+        const bulkOps = parsedRows.map(book => ({
+            updateOne: {
+                filter: { isbn: book.isbn },
+                update: {
+                    $set: {
+                        title:           book.title,
+                        totalCopies:     book.totalCopies,
+                        loanedCopies:    book.loanedCopies,
+                        availableCopies: book.availableCopies,
+                        subject:         book.subject,
+                        level:           book.level,
+                        language:        book.language,
+                        cornerName:      book.cornerName,
+                        cornerNumber:    book.cornerNumber,
+                        updatedAt:       now
+                    },
+                    $setOnInsert: { createdAt: now }   // uniquement à la création
+                },
+                upsert: true   // ← crée si absent, met à jour si présent
             }
-        }
+        }));
+
+        const result = await Book.bulkWrite(bulkOps, { ordered: false });
+
+        const addedCount   = result.upsertedCount   || 0;
+        const updatedCount = result.modifiedCount    || 0;
+        const skippedCount = parsedRows.length - addedCount - updatedCount;
 
         res.json({
-            message: `Import terminé avec succès.`,
+            message:      'Import terminé avec succès.',
             totalRows:    parsedRows.length,
             addedCount,
             updatedCount,
-            skippedCount
+            skippedCount: Math.max(0, skippedCount)
         });
 
     } catch (error) {
