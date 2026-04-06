@@ -548,24 +548,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 const response = await fetch('/api/books/upload', { method: 'POST', body: formData });
                 const result = await response.json();
                 if (!response.ok) throw new Error(result.message);
+
+                const b = result.books || {};
+                const l = result.loans;
+
+                let loansSection = '';
+                if (l) {
+                    loansSection = `
+                        <hr style="border:none;border-top:1px solid #c6f6d5;margin:8px 0;">
+                        <p style="margin:2px 0;font-size:0.85em;font-weight:bold;color:#2b6cb0;">📚 الإعارات (فصل Emprunts):</p>
+                        <p style="margin:2px 0;font-size:0.88em;color:#276749;">✅ إعارات جديدة أضيفت: <strong>${l.addedCount}</strong></p>
+                        <p style="margin:2px 0;font-size:0.88em;color:#718096;">⏭ إعارات موجودة (تجاهل): <strong>${l.skippedCount}</strong></p>
+                        ${l.errorCount > 0 ? `<p style="margin:2px 0;font-size:0.88em;color:#e53e3e;">⚠️ أخطاء (ISBN غير موجود…): <strong>${l.errorCount}</strong></p>` : ''}`;
+                }
+
                 statusDiv.innerHTML = `
                     <div style="background:#f0fff4;border:1px solid #68d391;border-radius:8px;padding:10px 14px;margin-top:6px;">
-                        <p style="margin:0 0 4px;font-weight:bold;color:#276749;">
-                            <i class="fas fa-check-circle" style="color:#38a169;"></i>
-                            ${getTranslatedText('import_success') || 'تم الاستيراد بنجاح!'}
+                        <p style="margin:0 0 6px;font-weight:bold;color:#276749;">
+                            <i class="fas fa-check-circle" style="color:#38a169;"></i> تم الاستيراد بنجاح!
                         </p>
-                        <p style="margin:2px 0;font-size:0.88em;color:#2d3748;">
-                            📦 إجمالي الصفوف المعالجة: <strong>${result.totalRows}</strong>
-                        </p>
-                        <p style="margin:2px 0;font-size:0.88em;color:#276749;">
-                            ✅ كتب جديدة أضيفت: <strong>${result.addedCount}</strong>
-                        </p>
-                        <p style="margin:2px 0;font-size:0.88em;color:#2b6cb0;">
-                            🔄 كتب موجودة تم تحديثها: <strong>${result.updatedCount}</strong>
-                        </p>
-                        <p style="margin:2px 0;font-size:0.88em;color:#718096;">
-                            ⏭ كتب موجودة بدون تغيير: <strong>${result.skippedCount}</strong>
-                        </p>
+                        <p style="margin:2px 0;font-size:0.85em;font-weight:bold;color:#2d3748;">📖 الكتب (فصل Livres):</p>
+                        <p style="margin:2px 0;font-size:0.88em;color:#276749;">✅ كتب جديدة أضيفت: <strong>${b.addedCount ?? 0}</strong></p>
+                        <p style="margin:2px 0;font-size:0.88em;color:#2b6cb0;">🔄 كتب موجودة تم تحديثها: <strong>${b.updatedCount ?? 0}</strong></p>
+                        <p style="margin:2px 0;font-size:0.88em;color:#718096;">⏭ كتب بدون تغيير: <strong>${b.skippedCount ?? 0}</strong></p>
+                        ${loansSection}
                     </div>`;
                 fileInput.value = '';
                 await loadDataForPage(1);

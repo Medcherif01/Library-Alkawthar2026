@@ -267,85 +267,180 @@ app.put('/api/loans/extend', async (req, res) => {
     }
 });
 
+// ─── Utilitaire : parse une date Excel (nombre, string JJ/MM/AAAA, ISO…) ───────
+function parseExcelDate(val) {
+    if (!val) return null;
+    // Nombre sériel Excel (ex: 45678)
+    if (typeof val === 'number') {
+        const parsed = xlsx.SSF.parse_date_code(val);
+        if (parsed) return new Date(parsed.y, parsed.m - 1, parsed.d);
+    }
+    const str = String(val).trim();
+    // Format JJ/MM/AAAA ou JJ-MM-AAAA
+    const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if (dmy) return new Date(parseInt(dmy[3]), parseInt(dmy[2]) - 1, parseInt(dmy[1]));
+    // Format AAAA-MM-JJ (ISO)
+    const iso = new Date(str);
+    return isNaN(iso.getTime()) ? null : iso;
+}
+
 app.post('/api/books/upload', upload.single('excelFile'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Aucun fichier fourni' });
 
         const workbook = xlsx.readFile(req.file.path);
-        const sheetName = workbook.SheetNames[0];
-        const data = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
-
-        if (!data || data.length === 0) {
-            return res.status(400).json({ message: 'Le fichier Excel est vide ou illisible.' });
-        }
-
-        // ── Normalisation des lignes ────────────────────────────────────────────
         const now = new Date();
-        const parsedRows = data.map(row => {
-            const cleanRow = {};
-            for (const key of Object.keys(row)) {
-                cleanRow[key.trim()] = typeof row[key] === 'string' ? row[key].trim() : row[key];
+
+        // ════════════════════════════════════════════════════════════════════════
+        // 1. FEUILLE LIVRES  (1ère feuille ou nommée "Livres")
+        // ════════════════════════════════════════════════════════════════════════
+        const booksSheetName = workbook.SheetNames.find(n =>
+            /livres?|books?/i.test(n)
+        ) || workbook.SheetNames[0];
+
+        const booksData = xlsx.utils.sheet_to_json(workbook.Sheets[booksSheetName], { defval: '' });
+
+        let booksAddedCount = 0, booksUpdatedCount = 0, booksSkippedCount = 0;
+
+        if (booksData && booksData.length > 0) {
+            const parsedBooks = booksData.map(row => {
+                const c = {};
+                for (const key of Object.keys(row)) {
+                    c[key.trim()] = typeof row[key] === 'string' ? row[key].trim() : row[key];
+                }
+                const totalCopies  = parseInt(c['Total Copies']   || c['TotalCopies']    || c['total_copies']  || 1);
+                const loanedCopies = parseInt(c['Copies Prêtées'] || c['Copies Pretees'] || c['LoanedCopies']  || c['loaned_copies'] || 0);
+                const safeTotal    = isNaN(totalCopies)  ? 1 : Math.max(0, totalCopies);
+                const safeLoaned   = isNaN(loanedCopies) ? 0 : Math.max(0, loanedCopies);
+                return {
+                    isbn:            String(c['ISBN']  || c['isbn']  || '').trim(),
+                    title:           String(c['Titre'] || c['Title'] || c['title'] || '').trim(),
+                    totalCopies:     safeTotal,
+                    loanedCopies:    safeLoaned,
+                    availableCopies: Math.max(0, safeTotal - safeLoaned),
+                    subject:         String(c['Matière']        || c['Matiere']        || c['Subject']       || c['subject']       || ''),
+                    level:           String(c['Niveau']         || c['Level']          || c['level']         || ''),
+                    language:        String(c['Langue']         || c['Language']       || c['language']      || ''),
+                    cornerName:      String(c['Nom du Coin']    || c['Corner Name']    || c['CornerName']    || ''),
+                    cornerNumber:    String(c['Numéro du Coin'] || c['Numero du Coin'] || c['Corner Number'] || c['CornerNumber'] || '')
+                };
+            }).filter(b => b.isbn && b.title);
+
+            if (parsedBooks.length > 0) {
+                const bulkBooks = parsedBooks.map(book => ({
+                    updateOne: {
+                        filter: { isbn: book.isbn },
+                        update: {
+                            $set: {
+                                title: book.title, totalCopies: book.totalCopies,
+                                loanedCopies: book.loanedCopies, availableCopies: book.availableCopies,
+                                subject: book.subject, level: book.level, language: book.language,
+                                cornerName: book.cornerName, cornerNumber: book.cornerNumber, updatedAt: now
+                            },
+                            $setOnInsert: { createdAt: now }
+                        },
+                        upsert: true
+                    }
+                }));
+                const rBooks = await Book.bulkWrite(bulkBooks, { ordered: false });
+                booksAddedCount   = rBooks.upsertedCount  || 0;
+                booksUpdatedCount = rBooks.modifiedCount  || 0;
+                booksSkippedCount = Math.max(0, parsedBooks.length - booksAddedCount - booksUpdatedCount);
             }
-
-            const totalCopies  = parseInt(cleanRow['Total Copies']    || cleanRow['TotalCopies']  || cleanRow['total_copies'] || 1);
-            const loanedCopies = parseInt(cleanRow['Copies Prêtées']  || cleanRow['Copies Pretees'] || cleanRow['LoanedCopies'] || cleanRow['loaned_copies'] || 0);
-            const safeTotal    = isNaN(totalCopies)  ? 1 : Math.max(0, totalCopies);
-            const safeLoaned   = isNaN(loanedCopies) ? 0 : Math.max(0, loanedCopies);
-
-            return {
-                isbn:           String(cleanRow['ISBN']  || cleanRow['isbn']  || '').trim(),
-                title:          String(cleanRow['Titre'] || cleanRow['Title'] || cleanRow['title'] || '').trim(),
-                totalCopies:    safeTotal,
-                loanedCopies:   safeLoaned,
-                availableCopies: Math.max(0, safeTotal - safeLoaned),
-                subject:        String(cleanRow['Matière']       || cleanRow['Matiere']       || cleanRow['Subject']       || cleanRow['subject']       || ''),
-                level:          String(cleanRow['Niveau']        || cleanRow['Level']         || cleanRow['level']         || ''),
-                language:       String(cleanRow['Langue']        || cleanRow['Language']      || cleanRow['language']      || ''),
-                cornerName:     String(cleanRow['Nom du Coin']   || cleanRow['Corner Name']   || cleanRow['CornerName']    || ''),
-                cornerNumber:   String(cleanRow['Numéro du Coin']|| cleanRow['Numero du Coin']|| cleanRow['Corner Number'] || cleanRow['CornerNumber']  || '')
-            };
-        }).filter(book => book.isbn && book.title);
-
-        if (parsedRows.length === 0) {
-            return res.status(400).json({ message: 'Aucune ligne valide trouvée (colonnes ISBN et Titre requises).' });
         }
 
-        // ── Une seule opération bulkWrite = ultra-rapide même pour des milliers de lignes ──
-        // updateOne + upsert:true  →  crée le document s'il n'existe pas, le met à jour sinon
-        const bulkOps = parsedRows.map(book => ({
-            updateOne: {
-                filter: { isbn: book.isbn },
-                update: {
-                    $set: {
-                        title:           book.title,
-                        totalCopies:     book.totalCopies,
-                        loanedCopies:    book.loanedCopies,
-                        availableCopies: book.availableCopies,
-                        subject:         book.subject,
-                        level:           book.level,
-                        language:        book.language,
-                        cornerName:      book.cornerName,
-                        cornerNumber:    book.cornerNumber,
-                        updatedAt:       now
-                    },
-                    $setOnInsert: { createdAt: now }   // uniquement à la création
-                },
-                upsert: true   // ← crée si absent, met à jour si présent
+        // ════════════════════════════════════════════════════════════════════════
+        // 2. FEUILLE EMPRUNTS  (nommée "Emprunts", "Prêts", "Loans"…)
+        // ════════════════════════════════════════════════════════════════════════
+        const loansSheetName = workbook.SheetNames.find(n =>
+            /emprunts?|pr[eê]ts?|loans?/i.test(n)
+        );
+
+        let loansAddedCount = 0, loansSkippedCount = 0, loansErrors = 0;
+
+        if (loansSheetName) {
+            const loansData = xlsx.utils.sheet_to_json(workbook.Sheets[loansSheetName], { defval: '' });
+
+            const parsedLoans = loansData.map(row => {
+                const c = {};
+                for (const key of Object.keys(row)) {
+                    c[key.trim()] = typeof row[key] === 'string' ? row[key].trim() : row[key];
+                }
+                const borrowerTypeRaw = String(
+                    c['Type Emprunteur'] || c['Type'] || c['borrowerType'] || 'student'
+                ).toLowerCase().trim();
+                const borrowerType = (borrowerTypeRaw === 'teacher' || borrowerTypeRaw === 'enseignant' ||
+                    borrowerTypeRaw === 'prof' || borrowerTypeRaw === 'professeur') ? 'teacher' : 'student';
+
+                return {
+                    isbn:         String(c['ISBN'] || c['isbn'] || '').trim(),
+                    studentName:  String(c['Nom Emprunteur'] || c['Nom'] || c['studentName'] || '').trim(),
+                    studentClass: String(c['Classe/Matière'] || c['Classe'] || c['Matière'] || c['studentClass'] || '').trim(),
+                    borrowerType,
+                    loanDate:     parseExcelDate(c['Date Emprunt'] || c['Date Prêt'] || c['loanDate']),
+                    returnDate:   parseExcelDate(c['Date Retour']  || c['returnDate']),
+                    copiesCount:  Math.max(1, parseInt(c['Nombre Copies'] || c['Copies'] || c['copiesCount'] || 1) || 1)
+                };
+            }).filter(l => l.isbn && l.studentName && l.returnDate);
+
+            // Traiter les emprunts en une passe (bulkWrite sur Loan)
+            for (const loanData of parsedLoans) {
+                try {
+                    // Trouver le livre par ISBN
+                    const book = await Book.findOne({ isbn: loanData.isbn });
+                    if (!book) { loansErrors++; continue; }
+
+                    // Vérifier si cet emprunt existe déjà (même ISBN + même emprunteur)
+                    const existingLoan = await Loan.findOne({
+                        isbn: loanData.isbn,
+                        studentName: loanData.studentName
+                    });
+
+                    if (existingLoan) {
+                        loansSkippedCount++;
+                        continue;
+                    }
+
+                    // Créer l'emprunt
+                    const loanDate    = loanData.loanDate || now;
+                    await Loan.create({
+                        bookId:       book._id,
+                        isbn:         loanData.isbn,
+                        studentName:  loanData.studentName,
+                        studentClass: loanData.studentClass,
+                        borrowerType: loanData.borrowerType,
+                        loanDate,
+                        returnDate:   loanData.returnDate,
+                        copiesCount:  loanData.copiesCount,
+                        createdAt:    now
+                    });
+
+                    // Mettre à jour les compteurs du livre
+                    book.loanedCopies    = (book.loanedCopies || 0) + loanData.copiesCount;
+                    book.availableCopies = Math.max(0, book.totalCopies - book.loanedCopies);
+                    await book.save();
+
+                    loansAddedCount++;
+                } catch (e) {
+                    console.error('Erreur import emprunt:', e.message);
+                    loansErrors++;
+                }
             }
-        }));
-
-        const result = await Book.bulkWrite(bulkOps, { ordered: false });
-
-        const addedCount   = result.upsertedCount   || 0;
-        const updatedCount = result.modifiedCount    || 0;
-        const skippedCount = parsedRows.length - addedCount - updatedCount;
+        }
 
         res.json({
-            message:      'Import terminé avec succès.',
-            totalRows:    parsedRows.length,
-            addedCount,
-            updatedCount,
-            skippedCount: Math.max(0, skippedCount)
+            message: 'Import terminé avec succès.',
+            books: {
+                totalRows:    booksAddedCount + booksUpdatedCount + booksSkippedCount,
+                addedCount:   booksAddedCount,
+                updatedCount: booksUpdatedCount,
+                skippedCount: booksSkippedCount
+            },
+            loans: loansSheetName ? {
+                addedCount:   loansAddedCount,
+                skippedCount: loansSkippedCount,
+                errorCount:   loansErrors
+            } : null
         });
 
     } catch (error) {
@@ -356,18 +451,61 @@ app.post('/api/books/upload', upload.single('excelFile'), async (req, res) => {
 
 app.get('/api/export/excel', async (req, res) => {
     try {
-        const books = await Book.find().lean();
+        const books = await Book.find().sort({ title: 1 }).lean();
         const loans = await getEnrichedLoans();
         const wb = xlsx.utils.book_new();
-        const booksSheet = xlsx.utils.json_to_sheet(books.map(b => ({ ISBN: b.isbn, Titre: b.title, 'Total Copies': b.totalCopies, 'Copies Prêtées': b.loanedCopies, 'Copies Disponibles': b.availableCopies, Matière: b.subject, Niveau: b.level, Langue: b.language, 'Nom du Coin': b.cornerName, 'Numéro du Coin': b.cornerNumber })));
-        const loansSheet = xlsx.utils.json_to_sheet(loans.map(l => ({ ISBN: l.isbn, 'Titre du Livre': l.title, 'Nom Emprunteur': l.studentName, Classe: l.studentClass, Type: l.borrowerType, 'Date Prêt': new Date(l.loanDate).toLocaleDateString(), 'Date Retour': new Date(l.returnDate).toLocaleDateString(), Copies: l.copiesCount })));
-        xlsx.utils.book_append_sheet(wb, booksSheet, 'Livres');
-        xlsx.utils.book_append_sheet(wb, loansSheet, 'Prêts');
+
+        // Format de date JJ/MM/AAAA — identique à ce qu'on attend à l'import
+        const fmtDate = (d) => {
+            if (!d) return '';
+            const dt = new Date(d);
+            if (isNaN(dt.getTime())) return '';
+            const dd = String(dt.getDate()).padStart(2, '0');
+            const mm = String(dt.getMonth() + 1).padStart(2, '0');
+            const yyyy = dt.getFullYear();
+            return `${dd}/${mm}/${yyyy}`;
+        };
+
+        // ── Feuille 1 : Livres ── colonnes = exactement celles attendues à l'import
+        const booksSheet = xlsx.utils.json_to_sheet(
+            books.map(b => ({
+                'ISBN':             b.isbn          || '',
+                'Titre':            b.title         || '',
+                'Total Copies':     b.totalCopies   ?? 0,
+                'Copies Prêtées':   b.loanedCopies  ?? 0,
+                'Copies Disponibles': b.availableCopies ?? 0,
+                'Matière':          b.subject       || '',
+                'Niveau':           b.level         || '',
+                'Langue':           b.language      || '',
+                'Nom du Coin':      b.cornerName    || '',
+                'Numéro du Coin':   b.cornerNumber  || ''
+            }))
+        );
+
+        // ── Feuille 2 : Emprunts ── colonnes = exactement celles attendues à l'import
+        const loansSheet = xlsx.utils.json_to_sheet(
+            loans.map(l => ({
+                'ISBN':             l.isbn          || '',
+                'Titre du Livre':   l.title         || '',
+                'Nom Emprunteur':   l.studentName   || '',
+                'Type Emprunteur':  l.borrowerType  === 'teacher' ? 'teacher' : 'student',
+                'Classe/Matière':   l.studentClass  || '',
+                'Date Emprunt':     fmtDate(l.loanDate),
+                'Date Retour':      fmtDate(l.returnDate),
+                'Nombre Copies':    l.copiesCount   ?? 1
+            }))
+        );
+
+        xlsx.utils.book_append_sheet(wb, booksSheet,  'Livres');
+        xlsx.utils.book_append_sheet(wb, loansSheet,  'Emprunts');
+
         const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
-        res.setHeader('Content-Disposition', 'attachment; filename=library_data.xlsx');
+        const filename = `bibliotheque_alkawthar_${new Date().toISOString().split('T')[0]}.xlsx`;
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.send(buffer);
     } catch (error) {
+        console.error("Erreur /api/export/excel:", error);
         res.status(500).json({ message: "Erreur lors de l'export", error: error.message });
     }
 });
