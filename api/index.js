@@ -66,6 +66,8 @@ app.use('/api', async (req, res, next) => {
 // --- Schémas MongoDB ---
 const BookSchema = new mongoose.Schema({ isbn: { type: String, required: true }, title: { type: String, required: true }, totalCopies: { type: Number, default: 1 }, loanedCopies: { type: Number, default: 0 }, availableCopies: { type: Number, default: 1 }, subject: String, level: String, language: String, cornerName: String, cornerNumber: String, createdAt: { type: Date, default: Date.now }, updatedAt: { type: Date, default: Date.now } });
 BookSchema.index({ isbn: 1 });
+// Index composé isbn+title pour identifier chaque livre de façon unique (même ISBN peut avoir plusieurs titres/coins)
+BookSchema.index({ isbn: 1, title: 1 });
 BookSchema.index({ title: 'text', subject: 'text' });
 const LoanSchema = new mongoose.Schema({ bookId: { type: mongoose.Schema.Types.ObjectId, ref: 'Book', required: true }, isbn: { type: String, required: true }, studentName: { type: String, required: true }, studentClass: String, borrowerType: { type: String, enum: ['student', 'teacher'], default: 'student' }, loanDate: { type: Date, default: Date.now }, returnDate: { type: Date, required: true }, copiesCount: { type: Number, default: 1 }, createdAt: { type: Date, default: Date.now } });
 LoanSchema.index({ bookId: 1, studentName: 1 });
@@ -306,46 +308,84 @@ app.post('/api/books/upload', upload.single('excelFile'), async (req, res) => {
             const parsedBooks = booksData.map(row => {
                 const c = {};
                 for (const key of Object.keys(row)) {
-                    c[key.trim()] = typeof row[key] === 'string' ? row[key].trim() : row[key];
+                    // Normalise la clé : trim + collapse espaces multiples
+                    const k = key.trim().replace(/\s+/g, ' ');
+                    c[k] = typeof row[key] === 'string' ? row[key].trim() : row[key];
                 }
-                const totalCopies  = parseInt(c['Total Copies']   || c['TotalCopies']    || c['total_copies']  || 1);
-                const loanedCopies = parseInt(c['Copies Prêtées'] || c['Copies Pretees'] || c['LoanedCopies']  || c['loaned_copies'] || 0);
+
+                // Lecture robuste : accepte valeur 0 sans la confondre avec "vide"
+                const getRaw = (...keys) => {
+                    for (const k of keys) {
+                        if (c[k] !== undefined && c[k] !== '') return c[k];
+                    }
+                    return undefined;
+                };
+
+                const totalRaw  = getRaw('Total Copies','TotalCopies','total_copies');
+                const loanedRaw = getRaw('Copies Prêtées','Copies Pretees','LoanedCopies','loaned_copies');
+                const totalCopies  = parseInt(totalRaw  ?? 1);
+                const loanedCopies = parseInt(loanedRaw ?? 0);
                 const safeTotal    = isNaN(totalCopies)  ? 1 : Math.max(0, totalCopies);
                 const safeLoaned   = isNaN(loanedCopies) ? 0 : Math.max(0, loanedCopies);
+
+                const isbn  = String(getRaw('ISBN','isbn')  ?? '').trim();
+                const title = String(getRaw('Titre','Title','title') ?? '').trim();
+
                 return {
-                    isbn:            String(c['ISBN']  || c['isbn']  || '').trim(),
-                    title:           String(c['Titre'] || c['Title'] || c['title'] || '').trim(),
+                    isbn,
+                    title,
                     totalCopies:     safeTotal,
                     loanedCopies:    safeLoaned,
                     availableCopies: Math.max(0, safeTotal - safeLoaned),
-                    subject:         String(c['Matière']        || c['Matiere']        || c['Subject']       || c['subject']       || ''),
-                    level:           String(c['Niveau']         || c['Level']          || c['level']         || ''),
-                    language:        String(c['Langue']         || c['Language']       || c['language']      || ''),
-                    cornerName:      String(c['Nom du Coin']    || c['Corner Name']    || c['CornerName']    || ''),
-                    cornerNumber:    String(c['Numéro du Coin'] || c['Numero du Coin'] || c['Corner Number'] || c['CornerNumber'] || '')
+                    subject:      String(getRaw('Matière','Matiere','Subject','subject') ?? ''),
+                    level:        String(getRaw('Niveau','Level','level')               ?? ''),
+                    language:     String(getRaw('Langue','Language','language')         ?? ''),
+                    cornerName:   String(getRaw('Nom du Coin','Corner Name','CornerName')           ?? ''),
+                    cornerNumber: String(getRaw('Numéro du Coin','Numero du Coin','Corner Number','CornerNumber') ?? '')
                 };
-            }).filter(b => b.isbn && b.title);
+            }).filter(b => b.isbn && b.title);  // lignes sans ISBN ET sans titre → ignorées
 
-            if (parsedBooks.length > 0) {
-                const bulkBooks = parsedBooks.map(book => ({
+            // ── Dédoublonnage dans le fichier Excel lui-même ──────────────────────
+            // Si deux lignes ont exactement le même ISBN+Titre, on garde la dernière
+            // (elle a peut-être des données plus récentes)
+            const dedupMap = new Map();
+            for (const book of parsedBooks) {
+                const key = `${book.isbn}|||${book.title}`;
+                dedupMap.set(key, book);   // écrase → on garde la dernière occurrence
+            }
+            const uniqueBooks = Array.from(dedupMap.values());
+
+            if (uniqueBooks.length > 0) {
+                // ── bulkWrite avec clé composite isbn + title ─────────────────────
+                // Cela permet :
+                //   • même ISBN, titres différents  → 2 documents séparés ✅
+                //   • même titre, ISBN différents   → 2 documents séparés ✅
+                //   • même ISBN + même titre        → mise à jour (upsert) ✅
+                const bulkBooks = uniqueBooks.map(book => ({
                     updateOne: {
-                        filter: { isbn: book.isbn },
+                        filter: { isbn: book.isbn, title: book.title },
                         update: {
                             $set: {
-                                title: book.title, totalCopies: book.totalCopies,
-                                loanedCopies: book.loanedCopies, availableCopies: book.availableCopies,
-                                subject: book.subject, level: book.level, language: book.language,
-                                cornerName: book.cornerName, cornerNumber: book.cornerNumber, updatedAt: now
+                                totalCopies:     book.totalCopies,
+                                loanedCopies:    book.loanedCopies,
+                                availableCopies: book.availableCopies,
+                                subject:         book.subject,
+                                level:           book.level,
+                                language:        book.language,
+                                cornerName:      book.cornerName,
+                                cornerNumber:    book.cornerNumber,
+                                updatedAt:       now
                             },
-                            $setOnInsert: { createdAt: now }
+                            $setOnInsert: { isbn: book.isbn, title: book.title, createdAt: now }
                         },
                         upsert: true
                     }
                 }));
+
                 const rBooks = await Book.bulkWrite(bulkBooks, { ordered: false });
                 booksAddedCount   = rBooks.upsertedCount  || 0;
                 booksUpdatedCount = rBooks.modifiedCount  || 0;
-                booksSkippedCount = Math.max(0, parsedBooks.length - booksAddedCount - booksUpdatedCount);
+                booksSkippedCount = Math.max(0, uniqueBooks.length - booksAddedCount - booksUpdatedCount);
             }
         }
 
